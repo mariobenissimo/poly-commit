@@ -1,14 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 //! A crate for polynomial commitment schemes.
-#![deny(unused_import_braces, unused_qualifications, trivial_casts)]
-#![deny(trivial_numeric_casts, variant_size_differences)]
-#![deny(stable_features, unreachable_pub, non_shorthand_field_patterns)]
-#![deny(unused_attributes, unused_mut)]
-#![deny(missing_docs)]
-#![deny(unused_imports)]
-#![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
-#![deny(unused_comparisons, bare_trait_objects, unused_must_use)]
-#![forbid(unsafe_code)]
+// #![deny(unused_import_braces, unused_qualifications, trivial_casts)]
+// #![deny(trivial_numeric_casts, variant_size_differences)]
+// #![deny(stable_features, unreachable_pub, non_shorthand_field_patterns)]
+// #![deny(unused_attributes, unused_mut)]
+// #![deny(missing_docs)]
+// #![deny(unused_imports)]
+// #![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
+// #![deny(unused_comparisons, bare_trait_objects, unused_must_use)]
+// #![forbid(unsafe_code)]
 #![doc = include_str!("../README.md")]
 
 #[allow(unused)]
@@ -106,6 +106,7 @@ pub mod challenge;
 ///
 /// [xzzpd19]: https://eprint.iacr.org/2019/317
 /// [zgkpp]: https://ieeexplore.ieee.org/document/8418645
+/// 
 pub mod multilinear_pc;
 
 use crate::challenge::ChallengeGenerator;

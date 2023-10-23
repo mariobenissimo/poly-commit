@@ -28,7 +28,7 @@ rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 ark-ed-on-bls12-381 = { version = "^0.4.0", default-features = false }
-ark-bls12-381 = { version = "^0.4.0", default-features = false, features = [ "curve" ] }
+ark-bls12-381 = { version = "^0.4.0", default-features = true, features = [ "curve" ] }
 ark-bls12-377 = { version = "^0.4.0", default-features = false, features = [ "curve" ] }
 blake2 = { version = "0.10", default-features = false }
 rand_chacha = { version = "0.3.0", default-features = false }
@@ -46,7 +46,7 @@ incremental = true
 debug = true
 
 [features]
-default = [ "std", "parallel" ]
+default = [ "std", "parallel", "r1cs" ]
 std = [ "ark-ff/std", "ark-ec/std", "ark-poly/std", "ark-std/std", "ark-relations/std", "ark-serialize/std", "ark-crypto-primitives/std"]
 r1cs = [ "ark-relations", "ark-r1cs-std", "hashbrown", "ark-crypto-primitives/r1cs"]
 print-trace = [ "ark-std/print-trace" ]
