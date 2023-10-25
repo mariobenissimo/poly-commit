@@ -1,5 +1,6 @@
 /// circuit to verify poly commitment
 use ark_ec::{pairing::{Pairing, self}, CurveGroup};
+use ark_ec::{Group, VariableBaseMSM};
 use digest::crypto_common::Iv;
 use crate::multilinear_pc::data_structures::{
     Commitment, Proof, VerifierKey,
@@ -12,7 +13,6 @@ use ark_relations::{
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 use ark_std::ops::Sub;
-use ark_ec::VariableBaseMSM;
 use ark_std::ops::Mul;
 use ark_ec::scalar_mul::fixed_base::FixedBase;
 use ark_ff::BigInteger;
@@ -22,7 +22,7 @@ use ark_ec::AffineRepr;
 /// data structures used by multilinear extension commitment scheme
 
 #[derive(Clone)]
-struct MulGtVerificaion<E, IV>
+struct PSTVerification<E, IV>
 where
     E: Pairing,
     IV: PairingVar<E>,
@@ -34,7 +34,7 @@ where
     proof: Proof<E>,
     _iv: PhantomData<IV>,
 }
-impl<E, IV> MulGtVerificaion<E, IV>
+impl<E, IV> PSTVerification<E, IV>
 where
     E: Pairing,
     IV: PairingVar<E>,
@@ -55,7 +55,7 @@ where
 
 
 
-impl<E, IV> ConstraintSynthesizer<<E as Pairing>::BaseField> for MulGtVerificaion<E, IV>
+impl<E, IV> ConstraintSynthesizer<<E as Pairing>::BaseField> for PSTVerification<E, IV>
 where
     E: Pairing,
     IV: PairingVar<E>,
@@ -69,26 +69,25 @@ where
         cs: ConstraintSystemRef<<E as Pairing>::BaseField>,
     ) -> Result<(), SynthesisError> {
         
-        // allocate verifierkey field
-        let vk_g_var  = IV::G1Var::new_witness(cs.clone(), || Ok(self.vk.g))?;
-        let vk_h_var = IV::G2Var::new_witness(cs.clone(), || Ok(self.vk.h))?;
+        let vk_g_var  = IV::G1Var::new_input(cs.clone(), || Ok(self.vk.g))?;
+        let vk_h_var = IV::G2Var::new_input(cs.clone(), || Ok(self.vk.h))?;
         let mut vk_gmask_var = Vec::new();
         for g_mask in self.vk.g_mask_random.clone().into_iter(){
-            let g_mask_var = IV::G1Var::new_witness(cs.clone(), || Ok(g_mask))?;
+            let g_mask_var = IV::G1Var::new_input(cs.clone(), || Ok(g_mask))?;
             vk_gmask_var.push(g_mask_var);
         }
         // allocate commitment
-        let com_g1_prod_var = IV::G1Var::new_witness(cs.clone(), || Ok(self.commitment.g_product))?;
+        let com_g1_prod_var = IV::G1Var::new_input(cs.clone(), || Ok(self.commitment.g_product))?;
         // allocate point
         let mut point_var = Vec::new();
         for p in self.point.clone().into_iter(){
             let scalar_in_fq = &E::BaseField::from_bigint(<E::BaseField as PrimeField>::BigInt::from_bits_le(p.into_bigint().to_bits_le().as_slice())).unwrap();
-            let p_var = FpVar::new_witness(cs.clone(), || Ok(scalar_in_fq))?;
+            let p_var = FpVar::new_input(cs.clone(), || Ok(scalar_in_fq))?;
             point_var.push(p_var);
         }
         // allocate value
         let scalar_in_fq = &E::BaseField::from_bigint(<E::BaseField as PrimeField>::BigInt::from_bits_le(self.value.into_bigint().to_bits_le().as_slice())).unwrap();
-        let value_var = FpVar::new_witness(cs.clone(), || Ok(scalar_in_fq))?;
+        let value_var = FpVar::new_input(cs.clone(), || Ok(scalar_in_fq))?;
         // allocate proof
         let mut proofs_var = Vec::new();
         for proof in self.proof.proofs.clone().into_iter(){
@@ -101,21 +100,49 @@ where
         let right_prepared = IV::prepare_g2(&vk_h_var)?;
         let left = IV::pairing(left_prepared, right_prepared)?;
         
-
+        
+        //calculating msm with framework function outside the circuit
         let scalar_size = E::ScalarField::MODULUS_BIT_SIZE as usize;
         let window_size = FixedBase::get_mul_window_size(self.vk.nv);
 
         let g_table = FixedBase::get_window_table(scalar_size, window_size, self.vk.g.into_group());
         let g_mul: Vec<E::G1> = FixedBase::msm(scalar_size, window_size, &g_table, self.point.as_slice());
 
-        let mut g_mul_var = Vec::new();
-        for g_m in g_mul.clone().into_iter(){
-            let g_m_var = IV::G1Var::new_witness(cs.clone(), || Ok(g_m))?;
-            g_mul_var.push(g_m_var);
+
+
+        //calculate basic msm
+        let mut res = Vec::new();
+        for s in self.point.into_iter() {
+            res.push(self.vk.g.mul(s));
         }
         
+        //check basic msm with basic vector
+        assert_eq!(res, g_mul);
+
+        let mut res_var = Vec::new();
+
+        for p in point_var.into_iter() {
+           
+            let x = vk_g_var.scalar_mul_le(p.to_bits_le()?.iter())?;
+            res_var.push(x);
+        }
+        
+
+        //do msm with circuit variable
+        let mut g_mul_var = Vec::new();
+        for g_m in g_mul.clone().into_iter(){
+            let g_m_var = IV::G1Var::new_input(cs.clone(), || Ok(g_m))?;
+            g_mul_var.push(g_m_var);
+        }
+
+
+        //assert vector calculated with msm and allocated is equal to msm calculated locally with variable
+        res_var.enforce_equal(&g_mul_var)?;
+
+
+        //computing other part of the circuit
         let pairing_lefts_var: Vec<_> = (0..self.vk.nv)
-            .map(|i| vk_gmask_var[i].clone() - g_mul_var[i].clone())
+            .map(|i| vk_gmask_var[i].clone() - res_var[i].clone())    //.map(|i| vk_gmask_var[i].clone() - g_mul_var[i].clone())
             .collect();
 
         let mut pairing_lefts_prep = Vec::new();
@@ -130,7 +157,8 @@ where
 
         let right_ml = IV::miller_loop(&pairing_lefts_prep,&pairing_right_prep)?;
         let right = IV::final_exponentiation(&right_ml).unwrap();
-        left.enforce_equal(&right);
+        left.enforce_equal(&right)?;
+        //left.enforce_not_equal(&right)?;
         Ok(())
     }
 }
@@ -153,6 +181,12 @@ mod tests {
     use super::*;
     use ark_ec::bls12::Bls12;
     type IV = ark_bls12_377::constraints::PairingVar;
+    use ark_groth16::Groth16;
+    use crate::ark_std::rand::SeedableRng;
+    use ark_bw6_761::BW6_761 as P;
+    use ark_crypto_primitives::snark::SNARK;
+    use rand_core::OsRng;
+
 
     fn test_polynomial<R: RngCore>(
         uni_params: &UniversalParams<E>,
@@ -169,7 +203,7 @@ mod tests {
         let value = poly.evaluate(&point).unwrap();
         let result = MultilinearPC::check(&vk, &com, &point, value, &proof);
         //assert!(result);
-        let circuit = MulGtVerificaion{
+        let circuit = PSTVerification{
             vk: vk, 
             commitment: com, 
             point: point, 
@@ -192,6 +226,7 @@ mod tests {
         let poly1 = DenseMultilinearExtension::rand(8, &mut rng);
         test_polynomial(&uni_params, &poly1, &mut rng);
 
+        test_groth(&uni_params, &poly1, &mut rng);
         // let poly2 = SparseMultilinearExtension::rand_with_config(9, 1 << 5, &mut rng);
         // test_polynomial(&uni_params, &poly2, &mut rng);
 
@@ -202,5 +237,36 @@ mod tests {
 
         // let poly4 = SparseMultilinearExtension::rand_with_config(1, 1 << 1, &mut rng);
         // test_polynomial(&uni_params, &poly4, &mut rng);
+    }
+
+    fn test_groth<R: RngCore>(
+        uni_params: &UniversalParams<E>,
+        poly: &impl MultilinearExtension<Fr>,
+        rng: &mut R,
+    ) {
+        let nv = poly.num_vars();
+        assert_ne!(nv, 0);
+        let (ck, vk) = MultilinearPC::<E>::trim(&uni_params, nv);
+        let point: Vec<_> = (0..nv).map(|_| Fr::rand(rng)).collect();
+        let com = MultilinearPC::commit(&ck, poly);
+        let proof = MultilinearPC::open(&ck, poly, &point);
+
+        let value = poly.evaluate(&point).unwrap();
+        let result = MultilinearPC::check(&vk, &com, &point, value, &proof);
+        //assert!(result);
+        let circuit = PSTVerification{
+            vk: vk, 
+            commitment: com, 
+            point: point, 
+            value: value, 
+            proof: proof,
+            _iv: PhantomData::<IV>,
+        };
+        // let mut rng2 = rand_chacha::ChaChaRng::seed_from_u64(1776);
+        // let (pk, vk) = Groth16::<P>::circuit_specific_setup(circuit.clone(), &mut rng2).unwrap();
+        // let proof = Groth16::<P>::prove(&pk, circuit.clone(), &mut OsRng).unwrap();
+        // let public_inputs = circuit.clone().result.unwrap().0.to_field_elements().unwrap();
+        // let ok = Groth16::<P>::verify(&pk.vk, &public_inputs , &proof).unwrap();
+        // assert!(ok);
     }
 }

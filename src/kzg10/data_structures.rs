@@ -1,6 +1,6 @@
 use crate::*;
 use ark_ec::pairing::Pairing;
-use ark_ec::AdditiveGroup;
+use ark_ec::Group;
 use ark_ec::AffineRepr;
 use ark_ff::{PrimeField, ToConstraintField};
 use ark_serialize::{
