@@ -106,7 +106,7 @@ pub mod challenge;
 ///
 /// [xzzpd19]: https://eprint.iacr.org/2019/317
 /// [zgkpp]: https://ieeexplore.ieee.org/document/8418645
-/// 
+///
 pub mod multilinear_pc;
 
 use crate::challenge::ChallengeGenerator;

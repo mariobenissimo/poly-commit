@@ -1,6 +1,8 @@
+use crate::*;
 use ark_ec::pairing::Pairing;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::vec::Vec;
+use ark_ff::{PrimeField, ToConstraintField};
 #[allow(type_alias_bounds)]
 /// Evaluations over {0,1}^n for G1
 pub type EvaluationHyperCubeOnG1<E: Pairing> = Vec<E::G1Affine>;
@@ -67,4 +69,28 @@ pub struct Commitment<E: Pairing> {
 pub struct Proof<E: Pairing> {
     /// Evaluation of quotients
     pub proofs: Vec<E::G2Affine>,
+}
+
+impl<E: Pairing> ToConstraintField<<E::TargetField as Field>::BasePrimeField> for VerifierKey<E>
+where
+    E::G1Affine: ToConstraintField<<E::TargetField as Field>::BasePrimeField>,
+    E::G2Affine: ToConstraintField<<E::TargetField as Field>::BasePrimeField>,
+{
+    fn to_field_elements(&self) -> Option<Vec<<E::TargetField as Field>::BasePrimeField>> {
+        let mut res = Vec::new();
+
+        res.extend_from_slice(&self.g.to_field_elements().unwrap());
+        res.extend_from_slice(&self.h.to_field_elements().unwrap());
+
+        Some(res)
+    }
+}
+
+impl<E: Pairing> ToConstraintField<<E::TargetField as Field>::BasePrimeField> for Commitment<E>
+where
+    E::G1Affine: ToConstraintField<<E::TargetField as Field>::BasePrimeField>,
+{
+    fn to_field_elements(&self) -> Option<Vec<<E::TargetField as Field>::BasePrimeField>> {
+        self.g_product.to_field_elements()
+    }
 }
